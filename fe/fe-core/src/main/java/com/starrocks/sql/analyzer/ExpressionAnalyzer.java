@@ -59,6 +59,7 @@ import com.starrocks.analysis.SubfieldExpr;
 import com.starrocks.analysis.Subquery;
 import com.starrocks.analysis.TableName;
 import com.starrocks.analysis.TimestampArithmeticExpr;
+import com.starrocks.analysis.UserVariableExpr;
 import com.starrocks.analysis.VariableExpr;
 import com.starrocks.catalog.AggregateFunction;
 import com.starrocks.catalog.ArrayType;
@@ -99,7 +100,6 @@ import com.starrocks.sql.ast.FieldReference;
 import com.starrocks.sql.ast.LambdaArgument;
 import com.starrocks.sql.ast.LambdaFunctionExpr;
 import com.starrocks.sql.ast.MapExpr;
-import com.starrocks.sql.ast.SetType;
 import com.starrocks.sql.ast.UserIdentity;
 import com.starrocks.sql.ast.UserVariable;
 import com.starrocks.sql.common.TypeManager;
@@ -376,7 +376,7 @@ public class ExpressionAnalyzer {
         }
     }
 
-    public static class Visitor extends AstVisitor<Void, Scope> {
+    public static class Visitor implements AstVisitor<Void, Scope> {
         private static final List<String> ADD_DATE_FUNCTIONS = Lists.newArrayList(FunctionSet.DATE_ADD,
                 FunctionSet.ADDDATE, FunctionSet.DAYS_ADD, FunctionSet.TIMESTAMPADD);
         private static final List<String> SUB_DATE_FUNCTIONS =
@@ -1003,8 +1003,20 @@ public class ExpressionAnalyzer {
 
             // throw exception direct
             checkFunction(fnName, node, argumentTypes);
-
-            if (fnName.equals(FunctionSet.COUNT) && node.getParams().isDistinct()) {
+            if (fnName.equalsIgnoreCase("typeof") && argumentTypes.length == 1) {
+                // For the typeof function, the parameter type of the function is the result of this function.
+                // At this time, the parameter type has been obtained. You can directly replace the current 
+                // function with StringLiteral. However, since the parent node of the current node in ast 
+                // cannot be obtained, this cannot be done directly. Replacement, here the StringLiteral is 
+                // stored in the parameter of the function, so that the StringLiteral can be obtained in the 
+                // subsequent rule rewriting, and then the typeof can be replaced.
+                Type originType = argumentTypes[0];
+                argumentTypes[0] = Type.STRING;
+                fn = new Function(new FunctionName("typeof_internal"), argumentTypes, Type.STRING, false);
+                Expr newChildExpr = new StringLiteral(originType.toTypeString());
+                node.getParams().exprs().set(0, newChildExpr);
+                node.setChild(0, newChildExpr);
+            } else if (fnName.equals(FunctionSet.COUNT) && node.getParams().isDistinct()) {
                 // Compatible with the logic of the original search function "count distinct"
                 // TODO: fix how we equal count distinct.
                 fn = Expr.getBuiltinFunction(FunctionSet.COUNT, new Type[] {argumentTypes[0]},
@@ -1679,33 +1691,27 @@ public class ExpressionAnalyzer {
         @Override
         public Void visitVariableExpr(VariableExpr node, Scope context) {
             try {
-                if (node.getSetType() != null && node.getSetType().equals(SetType.USER)) {
-                    UserVariable userVariable = session.getUserVariable(node.getName());
-                    // If referring to an uninitialized variable, its value is NULL and a string type.
-                    if (userVariable == null) {
-                        node.setType(Type.STRING);
-                        node.setIsNull();
-                        return null;
-                    }
-
-                    Type variableType = userVariable.getEvaluatedExpression().getType();
-                    node.setType(variableType);
-
-                    if (userVariable.getEvaluatedExpression() instanceof NullLiteral) {
-                        node.setIsNull();
-                    } else {
-                        node.setValue(userVariable.getEvaluatedExpression().getRealObjectValue());
-                    }
-                } else {
-                    VariableMgr.fillValue(session.getSessionVariable(), node);
-                    if (!Strings.isNullOrEmpty(node.getName()) &&
-                            node.getName().equalsIgnoreCase(SessionVariable.SQL_MODE)) {
-                        node.setType(Type.VARCHAR);
-                        node.setValue(SqlModeHelper.decode((long) node.getValue()));
-                    }
+                VariableMgr.fillValue(session.getSessionVariable(), node);
+                if (!Strings.isNullOrEmpty(node.getName()) &&
+                        node.getName().equalsIgnoreCase(SessionVariable.SQL_MODE)) {
+                    node.setType(Type.VARCHAR);
+                    node.setValue(SqlModeHelper.decode((long) node.getValue()));
                 }
             } catch (DdlException e) {
                 throw new SemanticException(e.getMessage());
+            }
+            return null;
+        }
+
+        @Override
+        public Void visitUserVariableExpr(UserVariableExpr node, Scope context) {
+            UserVariable userVariable = session.getUserVariable(node.getName());
+            if (userVariable == null) {
+                node.setValue(NullLiteral.create(Type.STRING));
+                node.setType(Type.STRING);
+            } else {
+                node.setType(userVariable.getEvaluatedExpression().getType());
+                node.setValue(userVariable.getEvaluatedExpression());
             }
             return null;
         }
@@ -1772,23 +1778,23 @@ public class ExpressionAnalyzer {
                     valueColumn = column;
                 }
             }
-            // (table, keys..., value_column, strict_mode)
+            // (table, keys..., value_column, null_if_not_found)
             int valueColumnIdx;
-            int strictModeIdx;
+            int nullIfNotFoundIdx;
             if (params.size() == keyColumns.size() + 1) {
                 valueColumnIdx = -1;
-                strictModeIdx = -1;
+                nullIfNotFoundIdx = -1;
             } else if (params.size() == keyColumns.size() + 2) {
                 if (params.get(params.size() - 1).getType().getPrimitiveType().isStringType()) {
                     valueColumnIdx = params.size() - 1;
-                    strictModeIdx = -1;
+                    nullIfNotFoundIdx = -1;
                 } else {
-                    strictModeIdx = params.size() - 1;
+                    nullIfNotFoundIdx = params.size() - 1;
                     valueColumnIdx = -1;
                 }
             } else if (params.size() == keyColumns.size() + 3) {
                 valueColumnIdx = params.size() - 2;
-                strictModeIdx = params.size() - 1;
+                nullIfNotFoundIdx = params.size() - 1;
             } else {
                 throw new SemanticException(String.format("dict_mapping function param size should be %d - %d",
                     keyColumns.size() + 1, keyColumns.size() + 3));
@@ -1812,13 +1818,13 @@ public class ExpressionAnalyzer {
                 valueField = valueColumn.getName();
             }
 
-            boolean strictMode = false;
-            if (strictModeIdx >= 0) {
-                Expr strictModeExpr = params.get(strictModeIdx);
-                if (!(strictModeExpr instanceof BoolLiteral)) {
-                    throw new SemanticException("dict_mapping function strict_mode param should be bool constant");
+            boolean nullIfNotFound = false;
+            if (nullIfNotFoundIdx >= 0) {
+                Expr nullIfNotFoundExpr = params.get(nullIfNotFoundIdx);
+                if (!(nullIfNotFoundExpr instanceof BoolLiteral)) {
+                    throw new SemanticException("dict_mapping function null_if_not_found param should be bool constant");
                 }
-                strictMode = ((BoolLiteral) strictModeExpr).getValue();
+                nullIfNotFound = ((BoolLiteral) nullIfNotFoundExpr).getValue();
             }
 
             List<Type> expectTypes = new ArrayList<>();
@@ -1829,7 +1835,7 @@ public class ExpressionAnalyzer {
             if (valueColumnIdx >= 0) {
                 expectTypes.add(Type.VARCHAR);
             }
-            if (strictModeIdx >= 0) {
+            if (nullIfNotFoundIdx >= 0) {
                 expectTypes.add(Type.BOOLEAN);
             }
 
@@ -1844,8 +1850,8 @@ public class ExpressionAnalyzer {
                 if (valueColumnIdx >= 0) {
                     expectTypeNames.add("VARCHAR value_field_name");
                 }
-                if (strictModeIdx >= 0) {
-                    expectTypeNames.add("BOOLEAN strict_mode");
+                if (nullIfNotFoundIdx >= 0) {
+                    expectTypeNames.add("BOOLEAN null_if_not_found");
                 }
 
                 for (int i = 0; i < node.getChildren().size(); ++i) {
@@ -1876,7 +1882,8 @@ public class ExpressionAnalyzer {
             List<String> keyFields = keyColumns.stream().map(Column::getName).collect(Collectors.toList());
             dictQueryExpr.setKey_fields(keyFields);
             dictQueryExpr.setValue_field(valueField);
-            dictQueryExpr.setStrict_mode(strictMode);
+            // For compatibility reason, we do not change the "strict_mode" variable in TDictQueryExpr
+            dictQueryExpr.setStrict_mode(!nullIfNotFound);
             node.setType(valueType);
 
             Function fn = new Function(FunctionName.createFnName(FunctionSet.DICT_MAPPING), actualTypes, valueType, false);

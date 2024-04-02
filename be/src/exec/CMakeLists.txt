@@ -198,6 +198,7 @@ set(EXEC_FILES
     pipeline/scan/schema_chunk_source.cpp
     pipeline/scan/schema_scan_operator.cpp
     pipeline/scan/schema_scan_context.cpp
+    pipeline/sink/connector_sink_operator.cpp
     pipeline/sink/iceberg_table_sink_operator.cpp
     pipeline/sink/sink_io_buffer.cpp
     pipeline/sink/hive_table_sink_operator.cpp
@@ -269,6 +270,9 @@ set(EXEC_FILES
     pipeline/pipeline.cpp
     pipeline/spill_process_operator.cpp
     pipeline/spill_process_channel.cpp
+    pipeline/group_execution/execution_group.cpp
+    pipeline/group_execution/execution_group_builder.cpp
+    pipeline/group_execution/group_operator.cpp
     workgroup/work_group.cpp
     workgroup/scan_executor.cpp
     workgroup/scan_task_queue.cpp
@@ -286,6 +290,7 @@ set(EXEC_FILES
     spill/dir_manager.cpp
     spill/serde.cpp
     spill/input_stream.cpp
+    spill/data_stream.cpp
     spill/log_block_manager.cpp
     spill/file_block_manager.cpp
     spill/hybird_block_manager.cpp

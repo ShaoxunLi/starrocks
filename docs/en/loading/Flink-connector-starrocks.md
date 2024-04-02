@@ -89,37 +89,37 @@ In your Maven project's `pom.xml` file, add the Flink connector as a dependency 
 
 ## Options
 
-###  connector
+### connector
 
 **Required**: Yes<br/>
 **Default value**: NONE<br/>
 **Description**: The connector that you want to use. The value must be "starrocks".
 
-###  jdbc-url
+### jdbc-url
 
 **Required**: Yes<br/>
 **Default value**: NONE<br/>
 **Description**: The address that is used to connect to the MySQL server of the FE. You can specify multiple addresses, which must be separated by a comma (,). Format: `jdbc:mysql://<fe_host1>:<fe_query_port1>,<fe_host2>:<fe_query_port2>,<fe_host3>:<fe_query_port3>`.
 
-###  load-url
+### load-url
 
 **Required**: Yes<br/>
 **Default value**: NONE<br/>
 **Description**: The address that is used to connect to the HTTP server of the FE. You can specify multiple addresses, which must be separated by a semicolon (;). Format: `<fe_host1>:<fe_http_port1>;<fe_host2>:<fe_http_port2>`.
 
-###  database-name
+### database-name
 
 **Required**: Yes<br/>
 **Default value**: NONE<br/>
 **Description**: The name of the StarRocks database into which you want to load data.
 
-###  table-name
+### table-name
 
 **Required**: Yes<br/>
 **Default value**: NONE<br/>
 **Description**: The name of the table that you want to use to load data into StarRocks.
 
-###  username
+### username
 
 **Required**: Yes<br/>
 **Default value**: NONE<br/>
@@ -135,7 +135,7 @@ In your Maven project's `pom.xml` file, add the Flink connector as a dependency 
 
 **Required**: No<br/>
 **Default value**: AUTO<br/>
-**Description**: The interface used to load data. This parameter is supported from Flink connector version 1.2.4 onwards. <ul><li>`V1`: Use [Stream Load](../loading/StreamLoad.md) interface to load data. Connectors before 1.2.4 only support this mode. </li> <li>`V2`: Use [Stream Load transaction](../loading/Stream_Load_transaction_interface.md) interface to load data. It requires StarRocks to be at least version 2.4. Recommends `V2` because it optimizes the memory usage and provides a more stable exactly-once implementation. </li> <li>`AUTO`: If the version of StarRocks supports transaction Stream Load, will choose `V2` automatically, otherwise choose `V1` </li></ul>
+**Description**: The interface used to load data. This parameter is supported from Flink connector version 1.2.4 onwards. <ul><li>`V1`: Use [Stream Load](../loading/StreamLoad.md) interface to load data. Connectors before 1.2.4 only support this mode. </li> <li>`V2`: Use [Stream Load transaction](./Stream_Load_transaction_interface.md) interface to load data. It requires StarRocks to be at least version 2.4. Recommends `V2` because it optimizes the memory usage and provides a more stable exactly-once implementation. </li> <li>`AUTO`: If the version of StarRocks supports transaction Stream Load, will choose `V2` automatically, otherwise choose `V1` </li></ul>
 
 ### sink.label-prefix
 
@@ -179,13 +179,13 @@ In your Maven project's `pom.xml` file, add the Flink connector as a dependency 
 **Default value**: 30000<br/>
 **Description**: The timeout for establishing HTTP connection. Valid values: 100 to 60000. Unit: ms. Before Flink connector v1.2.9, the default value is `1000`.
 
-### sink.wait-for-continue.timeout-ms 
+### sink.wait-for-continue.timeout-ms
 
 **Required**: No<br/>
 **Default value**: 10000<br/>
 **Description**: Supported since 1.2.7. The timeout for waiting response of HTTP 100-continue from the FE. Valid values: `3000` to `60000`. Unit: ms
 
-### sink.ignore.update-before         
+### sink.ignore.update-before
 
 **Required**: No<br/>
 **Default value**: true<br/>
@@ -198,6 +198,7 @@ In your Maven project's `pom.xml` file, add the Flink connector as a dependency 
 **Description**: The parallelism of loading. Only available for Flink SQL. If this parameter is not specified, Flink planner decides the parallelism. **In the scenario of multi-parallelism, users need to guarantee data is written in the correct order.**
 
 ### sink.properties.*
+
 **Required**: No<br/>
 **Default value**: NONE<br/>
 **Description**: The parameters that are used to control Stream Load behavior. For example, the parameter `sink.properties.format` specifies the format used for Stream Load, such as CSV or JSON. For a list of supported parameters and their descriptions, see [STREAM LOAD](../sql-reference/sql-statements/data-manipulation/STREAM_LOAD.md).
@@ -214,7 +215,7 @@ In your Maven project's `pom.xml` file, add the Flink connector as a dependency 
 **Default value**: \t<br/>
 **Description**: The column separator for CSV-formatted data.
 
-### sink.properties.row_delimiter     
+### sink.properties.row_delimiter
 
 **Required**: No<br/>
 **Default value**: \n<br/>
@@ -498,7 +499,7 @@ There are several ways to implement a Flink DataStream job according to the type
                   this.name = name;
                   this.score = score;
               }
-          }
+        }
       ```
 
   - The main program is as follows:
@@ -562,16 +563,18 @@ There are several ways to implement a Flink DataStream job according to the type
 
 ### Synchronize data with Flink CDC 3.0 (with schema change supported)
 
-[Flink CDC 3.0](https://github.com/ververica/flink-cdc-connectors/releases) framework can be used
-to easily [build a streaming ELT pipeline from CDC sources](https://ververica.github.io/flink-cdc-connectors/master/content/overview/cdc-pipeline.html) (such as MySQL and Kafka) to StarRocks. The pipeline can synchronize whole database, merged sharding tables, and schema changes from sources to StarRocks.
+[Flink CDC 3.0](https://nightlies.apache.org/flink/flink-cdc-docs-stable) framework can be used
+to easily build a streaming ELT pipeline from CDC sources (such as MySQL and Kafka) to StarRocks. The pipeline can synchronize whole database, merged sharding tables, and schema changes from sources to StarRocks.
 
-Since v1.2.9, the Flink connector for StarRocks is integrated into this framework as [StarRocks Pipeline Connector](https://ververica.github.io/flink-cdc-connectors/master/content/pipelines/starrocks-pipeline.html). The StarRocks Pipeline Connector supports:
+Since v1.2.9, the Flink connector for StarRocks is integrated into this framework as [StarRocks Pipeline Connector](https://nightlies.apache.org/flink/flink-cdc-docs-stable/docs/connectors/starrocks). The StarRocks Pipeline Connector supports:
 
 - Automatic creation of databases and tables
 - Schema change synchronization
 - Full and incremental data synchronization
 
-For quick start, see [Streaming ELT from MySQL to StarRocks using Flink CDC 3.0 with StarRocks Pipeline Connector](https://ververica.github.io/flink-cdc-connectors/master/content/quickstart/mysql-starrocks-pipeline-tutorial.html).
+For quick start, see [Streaming ELT from MySQL to StarRocks using Flink CDC 3.0 with StarRocks Pipeline Connector](https://nightlies.apache.org/flink/flink-cdc-docs-stable/docs/get-started/quickstart/mysql-to-starrocks).
+
+It is advised to use StarRocks v3.2.1 and later versions to enable [fast_schema_evolution](../sql-reference/sql-statements/data-definition/CREATE_TABLE.md#set-fast-schema-evolution). It will improve the speed of adding or dropping columns and reduce resource usage.
 
 ## Best practices
 
@@ -734,7 +737,7 @@ takes effect only when the new value for `score` is has a greater or equal to th
 
 ### Load data into columns of BITMAP type
 
-[`BITMAP`](https://docs.starrocks.io/en-us/latest/sql-reference/sql-statements/data-types/BITMAP) is often used to accelerate count distinct, such as counting UV, see [Use Bitmap for exact Count Distinct](https://docs.starrocks.io/en-us/latest/using_starrocks/Using_bitmap).
+[`BITMAP`](https://docs.starrocks.io/en-us/latest/sql-reference/data-types/other-data-types/BITMAP) is often used to accelerate count distinct, such as counting UV, see [Use Bitmap for exact Count Distinct](https://docs.starrocks.io/en-us/latest/using_starrocks/Using_bitmap).
 Here we take the counting of UV as an example to show how to load data into columns of the `BITMAP` type.
 
 1. Create a StarRocks Aggregate table in MySQL client.
@@ -755,7 +758,7 @@ Here we take the counting of UV as an example to show how to load data into colu
 
     The column `visit_user_id` in the Flink table is of `BIGINT` type, and we want to load this column to the column `visit_users` of `BITMAP` type in the StarRocks table. So when defining the DDL of the Flink table, note that:
     - Because Flink does not support `BITMAP`, you need to define a column `visit_user_id` as `BIGINT` type to represent the column `visit_users` of `BITMAP` type in the StarRocks table.
-    - You need to set the option `sink.properties.columns` to `page_id,visit_date,user_id,visit_users=to_bitmap(visit_user_id)`, which tells the connector the column mapping beween the Flink table and StarRocks table. Also you need to use [`to_bitmap`](https://docs.starrocks.io/en-us/latest/sql-reference/sql-functions/bitmap-functions/to_bitmap)
+    - You need to set the option `sink.properties.columns` to `page_id,visit_date,user_id,visit_users=to_bitmap(visit_user_id)`, which tells the connector the column mapping between the Flink table and StarRocks table. Also you need to use [`to_bitmap`](https://docs.starrocks.io/en-us/latest/sql-reference/sql-functions/bitmap-functions/to_bitmap)
    function to tell the connector to convert the data of `BIGINT` type into `BITMAP` type.
 
     ```SQL
@@ -801,7 +804,7 @@ Here we take the counting of UV as an example to show how to load data into colu
 
 ### Load data into columns of HLL type
 
-[`HLL`](../sql-reference/sql-statements/data-types/HLL.md) can be used for approximate count distinct, see [Use HLL for approximate count distinct](../using_starrocks/Using_HLL.md).
+[`HLL`](../sql-reference/data-types/other-data-types/HLL.md) can be used for approximate count distinct, see [Use HLL for approximate count distinct](../using_starrocks/Using_HLL.md).
 
 Here we take the counting of UV as an example to show how to load data into columns of the `HLL` type.
 

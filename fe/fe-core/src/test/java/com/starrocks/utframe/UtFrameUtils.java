@@ -77,6 +77,7 @@ import com.starrocks.ha.FrontendNodeType;
 import com.starrocks.journal.JournalEntity;
 import com.starrocks.journal.JournalInconsistentException;
 import com.starrocks.journal.JournalTask;
+import com.starrocks.lake.StarOSAgent;
 import com.starrocks.meta.MetaContext;
 import com.starrocks.persist.EditLog;
 import com.starrocks.planner.PlanFragment;
@@ -130,7 +131,6 @@ import com.starrocks.system.ComputeNode;
 import com.starrocks.thrift.TExplainLevel;
 import com.starrocks.thrift.TResultSinkType;
 import com.starrocks.thrift.TUniqueId;
-import com.starrocks.warehouse.Warehouse;
 import mockit.Mock;
 import mockit.MockUp;
 import org.apache.commons.codec.binary.Hex;
@@ -352,10 +352,9 @@ public class UtFrameUtils {
         GlobalStateMgr.getCurrentState().getNodeMgr().getClusterInfo().addBackend(be);
         if (RunMode.isSharedDataMode()) {
             int starletPort = backend.getStarletPort();
-            Warehouse warehouse = GlobalStateMgr.getCurrentState().getWarehouseMgr().getDefaultWarehouse();
-            long workerGroupId = warehouse.getAnyAvailableCluster().getWorkerGroupId();
             String workerAddress = backend.getHost() + ":" + starletPort;
-            GlobalStateMgr.getCurrentState().getStarOSAgent().addWorker(be.getId(), workerAddress, workerGroupId);
+            GlobalStateMgr.getCurrentState().getStarOSAgent().addWorker(be.getId(), workerAddress,
+                    StarOSAgent.DEFAULT_WORKER_GROUP_ID);
         }
         return be;
     }
@@ -371,10 +370,9 @@ public class UtFrameUtils {
         GlobalStateMgr.getCurrentState().getNodeMgr().getClusterInfo().addComputeNode(cn);
         if (RunMode.isSharedDataMode()) {
             int starletPort = backend.getStarletPort();
-            Warehouse warehouse = GlobalStateMgr.getCurrentState().getWarehouseMgr().getDefaultWarehouse();
-            long workerGroupId = warehouse.getAnyAvailableCluster().getWorkerGroupId();
             String workerAddress = backend.getHost() + ":" + starletPort;
-            GlobalStateMgr.getCurrentState().getStarOSAgent().addWorker(cn.getId(), workerAddress, workerGroupId);
+            GlobalStateMgr.getCurrentState().getStarOSAgent().addWorker(cn.getId(), workerAddress,
+                    StarOSAgent.DEFAULT_WORKER_GROUP_ID);
         }
         return cn;
     }
@@ -614,6 +612,9 @@ public class UtFrameUtils {
 
     private static void testView(ConnectContext connectContext, String originStmt, StatementBase statementBase)
             throws Exception {
+        if (!FeConstants.unitTestView) {
+            return;
+        }
         if (statementBase instanceof QueryStatement && !connectContext.getDatabase().isEmpty() &&
                 !statementBase.isExplain()) {
             String viewName = "view" + INDEX.getAndIncrement();
@@ -628,7 +629,7 @@ public class UtFrameUtils {
                     com.starrocks.sql.analyzer.Analyzer.analyze(viewStatement, connectContext);
                 } catch (Exception e) {
                     System.out.println("invalid view def: " + createTableStmt.getInlineViewDef()
-                            + "\nError msg:"  + e.getMessage());
+                            + "\nError msg:" + e.getMessage());
                     throw e;
                 }
             } catch (SemanticException | AnalysisException e) {
@@ -701,6 +702,15 @@ public class UtFrameUtils {
             UtFrameUtils.dropMockBackend(backendId++);
         }
 
+        // mock be num
+        backendId = 10002;
+        int beNumToAdd = Math.min(3, replayDumpInfo.getBeNum());
+        for (int i = 1; i < beNumToAdd; ++i) {
+            //UtFrameUtils.addMockBackend(backendId++);
+            String host = String.format("127.0.0.%s", i + 1);
+            UtFrameUtils.addMockBackend(backendId++, host, 9060);
+        }
+
         Set<String> dbSet = replayDumpInfo.getCreateTableStmtMap().keySet().stream().map(key -> key.split("\\.")[0])
                 .collect(Collectors.toSet());
         dbSet.forEach(db -> {
@@ -716,23 +726,29 @@ public class UtFrameUtils {
             if (entry.getValue().contains("CREATE MATERIALIZED VIEW")) {
                 continue;
             }
-            String dbName = entry.getKey().split("\\.")[0];
+            String[] nameParts = entry.getKey().split("\\.");
+            String dbName = nameParts.length == 2 ? nameParts[0] : connectContext.getDatabase();
             if (!starRocksAssert.databaseExist(dbName)) {
                 starRocksAssert.withDatabase(dbName);
             }
+            String tableName = nameParts.length == 2 ? nameParts[1] : nameParts[0];
+            String dropTable = String.format("drop table if exists `%s`.`%s`;", dbName, tableName);
+            connectContext.executeSql(dropTable);
             starRocksAssert.useDatabase(dbName);
-            starRocksAssert.withSingleReplicaTable(entry.getValue());
+            starRocksAssert.withTable(entry.getValue());
         }
         // create view
         for (Map.Entry<String, String> entry : replayDumpInfo.getCreateViewStmtMap().entrySet()) {
             String normalizedViewName = entry.getKey();
             String[] nameParts = normalizedViewName.split("\\.");
-            String dbName = nameParts[0];
+            String dbName = nameParts.length == 2 ? nameParts[0] : connectContext.getDatabase();
             if (!starRocksAssert.databaseExist(dbName)) {
                 starRocksAssert.withDatabase(dbName);
             }
-            String viewName = nameParts[1];
+            String viewName = nameParts.length == 2 ? nameParts[1] : nameParts[0];
             starRocksAssert.useDatabase(dbName);
+            String dropView = String.format("drop view if exists `%s`.`%s`;", dbName, viewName);
+            connectContext.executeSql(dropView);
             String createView = String.format("create view `%s`.`%s` as %s",
                     dbName, viewName, replayDumpInfo.getCreateViewStmtMap().get(normalizedViewName));
             starRocksAssert.withView(createView);
@@ -742,17 +758,16 @@ public class UtFrameUtils {
             if (!entry.getValue().contains("CREATE MATERIALIZED VIEW")) {
                 continue;
             }
-            String dbName = entry.getKey().split("\\.")[0];
+            String[] nameParts = entry.getKey().split("\\.");
+            String dbName = nameParts.length == 2 ? nameParts[0] : connectContext.getDatabase();
             if (!starRocksAssert.databaseExist(dbName)) {
                 starRocksAssert.withDatabase(dbName);
             }
+            String mvName = nameParts.length == 2 ? nameParts[1] : nameParts[0];
+            String dropMv = String.format("drop materialized view if exists `%s`.`%s`;", dbName, mvName);
+            connectContext.executeSql(dropMv);
             starRocksAssert.useDatabase(dbName);
-            starRocksAssert.withSingleReplicaAsyncMv(entry.getValue());
-        }
-        // mock be num
-        backendId = 10002;
-        for (int i = 1; i < replayDumpInfo.getBeNum(); ++i) {
-            UtFrameUtils.addMockBackend(backendId++);
+            starRocksAssert.withAsyncMvAndRefresh(entry.getValue());
         }
 
         // mock be core stat
@@ -831,6 +846,7 @@ public class UtFrameUtils {
         }
         return optimizedPlan;
     }
+
     public static OptExpression getQueryOptExpression(ConnectContext connectContext,
                                                       ColumnRefFactory columnRefFactory,
                                                       LogicalPlan logicalPlan) {
@@ -1115,7 +1131,7 @@ public class UtFrameUtils {
                 try (DataInputStream dis = new DataInputStream(
                         new ByteArrayInputStream(buffer.getData(), 0, buffer.getLength()))) {
                     je.readFields(dis);
-                    EditLog.loadJournal(GlobalStateMgr.getCurrentState(), je);
+                    GlobalStateMgr.getCurrentState().getEditLog().loadJournal(GlobalStateMgr.getCurrentState(), je);
                     // System.out.println("replayed journal type: " + je.getOpCode());
                 } catch (JournalInconsistentException e) {
                     System.err.println("load journal failed, type: " + je.getOpCode() + " , error: " + e.getMessage());
@@ -1284,7 +1300,6 @@ public class UtFrameUtils {
         }
         context.getUserVariables().putAll(userVariablesFromHint);
     }
-
 
     private static void clearQueryScopeHintContext(ConnectContext context, SessionVariable sessionVariableBackup) {
         context.setSessionVariable(sessionVariableBackup);

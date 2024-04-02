@@ -16,6 +16,7 @@
 
 #include "column/vectorized_fwd.h"
 #include "connector/connector.h"
+#include "connector_sink/hive_chunk_sink.h"
 #include "exec/connector_scan_node.h"
 #include "exec/hdfs_scanner.h"
 
@@ -27,6 +28,8 @@ public:
 
     DataSourceProviderPtr create_data_source_provider(ConnectorScanNode* scan_node,
                                                       const TPlanNode& plan_node) const override;
+
+    std::unique_ptr<ConnectorChunkSinkProvider> create_data_sink_provider() const override;
 
     ConnectorType connector_type() const override { return ConnectorType::HIVE; }
 };
@@ -78,10 +81,11 @@ public:
     bool can_estimate_mem_usage() const override { return true; }
 
     void get_split_tasks(std::vector<pipeline::ScanSplitContextPtr>* split_tasks) override;
+    void _init_chunk(ChunkPtr* chunk, size_t n) override;
 
 private:
     const HiveDataSourceProvider* _provider;
-    const THdfsScanRange _scan_range;
+    THdfsScanRange _scan_range;
 
     // ============= init func =============
     Status _init_conjunct_ctxs(RuntimeState* state);
@@ -145,6 +149,9 @@ private:
 
     // iceberg equality delete column slots.
     std::vector<SlotDescriptor*> _equality_delete_slots;
+
+    // iceberg equality delete column tuple desc.
+    TupleDescriptor* _delete_column_tuple_desc;
 
     // partition column index in `tuple_desc`
     std::vector<int> _partition_index_in_chunk;
