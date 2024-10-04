@@ -4764,6 +4764,9 @@ public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
     @Override
     public ParseNode visitQueryNoWith(StarRocksParser.QueryNoWithContext context) {
         List<OrderByElement> orderByElements = new ArrayList<>();
+
+        QueryRelation queryRelation = (QueryRelation) visit(context.queryPrimary());
+
         if (context.ORDER() != null) {
             orderByElements.addAll(visit(context.sortItem(), OrderByElement.class));
         }
@@ -4773,7 +4776,6 @@ public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
             limitElement = (LimitElement) visit(context.limitElement());
         }
 
-        QueryRelation queryRelation = (QueryRelation) visit(context.queryPrimary());
         queryRelation.setOrderBy(orderByElements);
         queryRelation.setLimit(limitElement);
         return queryRelation;
@@ -5075,17 +5077,47 @@ public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
         return token.getType() == StarRocksLexer.ASC;
     }
 
+    private void setLimit(StarRocksParser.LimitElementContext context, LimitElement element) {
+        if (context.limit.getText().equals("?")) {
+            Parameter parameter = new Parameter(placeHolderSlotId++);
+            parameters.add(parameter);
+            element.setParaLimit(parameter);
+        } else {
+            element.setLimit(Long.parseLong(context.limit.getText()));
+        }
+    }
+
+    private void setOffset(StarRocksParser.LimitElementContext context, LimitElement element) {
+        if (context.offset != null) {
+            if (context.offset.getText().equals("?")) {
+                Parameter parameter = new Parameter(placeHolderSlotId++);
+                parameters.add(parameter);
+                element.setParaOffset(parameter);
+            } else {
+                element.setOffset(Long.parseLong(context.offset.getText()));
+            }
+        }
+    }
+
     @Override
     public ParseNode visitLimitElement(StarRocksParser.LimitElementContext context) {
         if (context.limit.getText().equals("?") || (context.offset != null && context.offset.getText().equals("?"))) {
-            throw new ParsingException("using parameter(?) as limit or offset not supported");
+            if (parameters == null) {
+                parameters = new ArrayList<>();
+            }
         }
-        long limit = Long.parseLong(context.limit.getText());
-        long offset = 0;
-        if (context.offset != null) {
-            offset = Long.parseLong(context.offset.getText());
+
+        LimitElement element = new LimitElement(0, -1, createPos(context));
+        // Ensure the sequence of offset and limit, related to parameters mapping
+        // LIMIT off, limit
+        if (context.getText().contains(",")) {
+            setOffset(context, element);
+            setLimit(context, element);
+        } else {
+            setLimit(context, element);
+            setOffset(context, element);
         }
-        return new LimitElement(offset, limit, createPos(context));
+        return element;
     }
 
     @Override

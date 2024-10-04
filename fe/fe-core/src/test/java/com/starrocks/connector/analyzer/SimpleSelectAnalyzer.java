@@ -27,6 +27,7 @@ import com.starrocks.analysis.IntLiteral;
 import com.starrocks.analysis.LimitElement;
 import com.starrocks.analysis.OrderByElement;
 import com.starrocks.analysis.SlotRef;
+import com.starrocks.analysis.VariableExpr;
 import com.starrocks.catalog.Type;
 import com.starrocks.common.TreeNode;
 import com.starrocks.sql.analyzer.AnalyzeState;
@@ -103,9 +104,31 @@ public class SimpleSelectAnalyzer {
             if (limitElement.getOffset() > 0 && orderByElements.isEmpty()) {
                 // The offset can only be processed in sort,
                 // so when there is no order by, we manually set offset to 0
-                analyzeState.setLimit(new LimitElement(0, limitElement.getLimit()));
-            } else {
-                analyzeState.setLimit(new LimitElement(limitElement.getOffset(), limitElement.getLimit()));
+                limitElement.setOffset(0);
+            }
+
+            updateLimitAndOffset(limitElement);
+
+            analyzeState.setLimit(limitElement);
+        }
+    }
+
+    private void updateLimitAndOffset(LimitElement limitElement) {
+        if (limitElement.getParaLimit() != null) {
+            Expr expr = limitElement.getParaLimit().getExpr();
+            if (expr instanceof VariableExpr variableExpr) {
+                limitElement.setLimit(Long.parseLong(variableExpr.getValue().toString()));
+            } else if (expr instanceof IntLiteral literal) {
+                limitElement.setLimit(literal.getLongValue());
+            }
+        }
+
+        if (limitElement.getParaOffset() != null) {
+            Expr expr = limitElement.getParaOffset().getExpr();
+            if (expr instanceof VariableExpr variableExpr) {
+                limitElement.setOffset(Long.parseLong(variableExpr.getValue().toString()));
+            } else if (expr instanceof IntLiteral literal) {
+                limitElement.setOffset(literal.getLongValue());
             }
         }
     }

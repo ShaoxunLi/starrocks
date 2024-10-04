@@ -49,6 +49,9 @@ public class LimitElement implements ParseNode {
     private long limit;
     private long offset;
 
+    private Parameter paraLimit;
+    private Parameter paraOffset;
+
     // END: Members that need to be reset()
     /////////////////////////////////////////
 
@@ -72,12 +75,24 @@ public class LimitElement implements ParseNode {
         this.pos = pos;
         this.offset = offset;
         this.limit = limit;
+        this.paraOffset = null;
+        this.paraLimit = null;
     }
 
     protected LimitElement(LimitElement other) {
         pos = other.pos;
         limit = other.limit;
         offset = other.offset;
+        paraOffset = other.paraOffset;
+        paraLimit = other.paraLimit;
+    }
+
+    public LimitElement(Parameter paraOffset, Parameter paraLimit, NodePosition pos) {
+        this.pos = pos;
+        this.paraOffset = paraOffset;
+        this.paraLimit = paraLimit;
+        this.offset = 0;
+        this.limit = -1;
     }
 
     @Override
@@ -94,7 +109,31 @@ public class LimitElement implements ParseNode {
     }
 
     public boolean hasLimit() {
-        return limit != -1;
+        return limit != -1 || paraLimit != null;
+    }
+
+    public void setLimit(long limit) {
+        this.limit = limit;
+    }
+
+    public void setOffset(long offset) {
+        this.offset = offset;
+    }
+
+    public Parameter getParaLimit() {
+        return paraLimit;
+    }
+
+    public Parameter getParaOffset() {
+        return paraOffset;
+    }
+
+    public void setParaLimit(Parameter limit) {
+        this.paraLimit = limit;
+    }
+
+    public void setParaOffset(Parameter offset) {
+        this.paraOffset = offset;
     }
 
     /**

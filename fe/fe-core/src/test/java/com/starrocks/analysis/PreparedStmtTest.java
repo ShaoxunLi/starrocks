@@ -140,4 +140,23 @@ public class PreparedStmtTest{
                 ((SelectRelation) queryStmt.getQueryRelation()).getPredicate().getChild(1));
     }
 
+    @Test
+    public void testPrepareStmtWithLimit() throws Exception {
+        String sql = "PREPARE stmt FROM select * from demo.prepare_stmt limit ?";
+        PrepareStmt stmt = (PrepareStmt) UtFrameUtils.parseStmtWithNewParser(sql, ctx);
+        Assert.assertEquals(1, stmt.getParameters().size());
+
+        sql = "PREPARE stmt FROM select * from demo.prepare_stmt limit ? offset 1";
+        stmt = (PrepareStmt) UtFrameUtils.parseStmtWithNewParser(sql, ctx);
+        Assert.assertEquals(1, stmt.getParameters().size());
+
+        sql = "PREPARE stmt FROM select * from demo.prepare_stmt limit 2 offset ?";
+        stmt = (PrepareStmt) UtFrameUtils.parseStmtWithNewParser(sql, ctx);
+        Assert.assertEquals(1, stmt.getParameters().size());
+
+        sql = "PREPARE stmt FROM select * from demo.prepare_stmt limit ? offset ?";
+        stmt = (PrepareStmt) UtFrameUtils.parseStmtWithNewParser(sql, ctx);
+        Assert.assertEquals(2, stmt.getParameters().size());
+    }
+
 }
